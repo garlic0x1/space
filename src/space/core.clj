@@ -1,10 +1,10 @@
 (ns space.core)
 
-(defn pretty-seconds [seconds]
-  (cond (> seconds 31536000) (str (int (/ seconds 31536000)) " years, "   (pretty-seconds (mod seconds 31536000)))
-        (> seconds 86400)    (str (int (/ seconds 86400))    " days, "    (pretty-seconds (mod seconds 86400)))
-        (> seconds 3600)     (str (int (/ seconds 3600))     " hours, "   (pretty-seconds (mod seconds 3600)))
-        (> seconds 60)       (str (int (/ seconds 60))       " minutes, " (pretty-seconds (mod seconds 60)))
+(defn pretty-time [seconds]
+  (cond (> seconds 31557600) (str (int (/ seconds 31557600)) " years, "   (pretty-time (mod seconds 31557600)))
+        (> seconds 86400)    (str (int (/ seconds 86400))    " days, "    (pretty-time (mod seconds 86400)))
+        (> seconds 3600)     (str (int (/ seconds 3600))     " hours, "   (pretty-time (mod seconds 3600)))
+        (> seconds 60)       (str (int (/ seconds 60))       " minutes, " (pretty-time (mod seconds 60)))
         :else (str (int seconds) " seconds")))
 
 (defn subseq? [a b]
@@ -31,7 +31,7 @@
                       :callisto {:type 'moon :distance 1.900e9 :mass 1.075938e23 :radius 2.4103e6}}}
            :saturn  {:type 'planet :distance 1.4335e12 :mass 5.683e26 :radius 58.232e6
                      :satellites
-                     {:titan {:type 'moon :mass  1.3452e23 :radius 2.5747e6}}}}})
+                     {:titan {:type 'moon :distance 1.2e9 :mass  1.3452e23 :radius 2.5747e6}}}}})
 
 ;; travel time with constant force
 ;; no flip, accelerates towards target whole trip
@@ -42,7 +42,7 @@
               (recur (- dist v) (+ v force) (inc time))))]
     (integral dist 0 0)))
 
-;; flips halfway to decelerate
+;; flips rocket halfway to decelerate
 ;; to get the time to the moon at 1 earth g
 ;; (pretty-seconds (travel-time 9.8 3.844e8)) => "3 hours, 28 minutes, 48 seconds"
 (defn integral-flip-time [force dist]
@@ -58,7 +58,7 @@
     (list name)
     (->> (:satellites system)
          (map (fn [[k v]] [k (find-name name v)]))
-         (filter (fn [[k v]] (some? v)))
+         (filter (fn [[_ v]] (some? v)))
          (map (fn [[k v]] (cons k v)))
          (first))))
 
@@ -85,15 +85,19 @@
                   (abs (- (dl al i system)
                           (dl bl i system)))))))
 
+(defn time-between [a b]
+  (->> sun
+       (distance-between a b)
+       (integral-flip-time 9.8)
+       (pretty-time)))
+
 ;; gravity at surface
 (defn surface-gravity [body]
-  (/ (* big-g (:mass body))
-     (square (:radius body))))
+  (/ (* big-g (:mass body)) (square (:radius body))))
 
 ;; gravity at distance from center
 (defn celestial-gravity [body]
-  (/ (* (:mass body) big-g )
-     (square (:distance body))))
+  (/ (* (:mass body) big-g ) (square (:distance body))))
 
 ;; perpendicular velocity to maintain circular orbit
 (defn circular-orbit-velocity [mass dist]
@@ -104,8 +108,7 @@
   (* sqrt2 (circular-orbit-velocity (:mass body) (:radius body))))
 
 ;; if earth was in circular orbit, a year would take
-;; (pretty-seconds (circular-orbit-period 1.9891e30 1.496e11))
-;; => "1 years, 4 hours, 49 minutes, 54 seconds"
+;; (pretty-time (circular-orbit-period 1.9891e30 1.496e11))
+;; => "365 days, 4 hours, 49 minutes, 54 seconds"
 (defn circular-orbit-period [mass dist]
-  (/ (* 2 pi dist)
-     (circular-orbit-velocity mass dist)))
+  (/ (* 2 pi dist) (circular-orbit-velocity mass dist)))
