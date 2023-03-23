@@ -7,9 +7,16 @@
         (> seconds 60)       (str (int (/ seconds 60))       " minutes, " (pretty-time (mod seconds 60)))
         :else (str (int seconds) " seconds")))
 
-(defn subseq? [a b]
-  (some #{a} (partition (count a) 1 b)))
+(defn take-until [pred coll]
+  (lazy-seq (when-let [s (seq coll)]
+              (if (pred (first s))
+                (cons (first s) nil)
+                (cons (first s) (take-until pred (rest s)))))))
+
+(defn subseq? [a b] (some #{a} (partition (count a) 1 b)))
+
 (defn square [n] (* n n))
+
 (def sqrt2 1.41421356237)
 (def pi 3.1415926535)
 (def big-g 6.6743e-11)
@@ -64,27 +71,25 @@
 
 (defn find-body [name system] (get-body (find-name name system) system))
 
-;; (->> sun
-;;      (distance-between :earth :ganymede)
-;;      (const-force-time 9.8)
-;;      (pretty-seconds))
-;; => "5 days, 20 hours, 44 minutes, 52 seconds"
 ;; calculates distance between oldest siblings of a system, separating a and b
 ;; for example, the distance between titan and venus
 ;; is the distance between saturn and venus
 (defn distance-between [a b system]
   (let [al (find-name a system)
         bl (find-name b system)
-        dl (fn [l i s] (:distance (find-body (nth l i) s)))]
-    (cond (subseq? al bl) (dl bl (count al) system)
-          (subseq? bl al) (dl al (count bl) system)
-          :else (let [i (->> (map vector al bl)
-                             (take-while (fn [[a b]] (not= a b)))
-                             (count)
-                             (dec))]
-                  (abs (- (dl al i system)
-                          (dl bl i system)))))))
+        dl (fn [seq ind] (:distance (find-body (nth seq ind) system)))
+        dk (fn [pair] (abs (- (:distance (find-body (first pair) system))
+                             (:distance (find-body (second pair) system)))))]
+    (cond (subseq? al bl) (dl bl (count al))
+          (subseq? bl al) (dl al (count bl))
+          :else (dk (->> (map vector al bl)
+                         (filter (fn [[a b]] (not= a b)))
+                         (first))))))
 
+;; integral flip travel time at 1g between bodies
+;; (time-between :io :callisto) => "6 hours, 49 minutes, 24 seconds"
+;; (time-between :mars :earth) => "2 days, 1 hours, 39 minutes, 34 seconds"
+;; (time-between :mercury :saturn) => "8 days, 16 hours, 8 minutes, 34 seconds"
 (defn time-between [a b]
   (->> sun
        (distance-between a b)
@@ -112,3 +117,11 @@
 ;; => "365 days, 4 hours, 49 minutes, 54 seconds"
 (defn circular-orbit-period [mass dist]
   (/ (* 2 pi dist) (circular-orbit-velocity mass dist)))
+
+;; find the length of a year of a planet, assuming a circular orbit
+;; (planetary-year :earth) => "365 days, 4 hours, 49 minutes, 54 seconds"
+(defn planetary-year [planet]
+  (->> (find-body planet sun)
+       (:distance)
+       (circular-orbit-period 1.9891e30)
+       (pretty-time)))
