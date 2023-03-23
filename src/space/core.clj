@@ -22,13 +22,16 @@
 (def big-g 6.6743e-11)
 
 ;; bodies mass in kilograms distance in meters
-(def sun {:type 'star :mass 1.9891e30 :radius 6.957e8
+(def model
+  {:type 'system
+   :satellites
+   {:sun {:type 'star :mass 1.9891e30 :radius 6.957e8
           :satellites
           {:mercury {:type 'planet :distance 5.790e10 :mass 0.330e23 :radius 2.4397e6}
            :venus   {:type 'planet :distance 1.082e11 :mass 4.867e24 :radius 6.0518e6}
            :earth   {:type 'planet :distance 1.496e11 :mass 5.972e24 :radius 6.3780e6
                      :satellites
-                     {:moon {:type 'moon :distance 3.844e8 :mass 7.34767e22 :radius 1.7374e6}}}
+                     {:moon     {:type 'moon :distance 3.844e8 :mass 7.34767e22  :radius 1.7374e6}}}
            :mars    {:type 'planet :distance 2.279e11 :mass 6.41693e23 :radius 3.3895e6}
            :jupiter {:type 'planet :distance 7.786e11 :mass 1.898e27   :radius 6.9911e7
                      :satellites
@@ -38,7 +41,7 @@
                       :callisto {:type 'moon :distance 1.900e9 :mass 1.075938e23 :radius 2.4103e6}}}
            :saturn  {:type 'planet :distance 1.4335e12 :mass 5.683e26 :radius 58.232e6
                      :satellites
-                     {:titan {:type 'moon :distance 1.2e9 :mass  1.3452e23 :radius 2.5747e6}}}}})
+                     {:titan    {:type 'moon :distance 1.200e9 :mass 1.345200e23 :radius 2.5747e6}}}}}}})
 
 ;; travel time with constant force
 ;; no flip, accelerates towards target whole trip
@@ -55,31 +58,35 @@
 (defn integral-flip-time [force dist]
   (* 2 (integral-time force (/ dist 2))))
 
-(defn get-body [keyseq system]
-  (if (< 1 (count keyseq))
-    (get-body (rest keyseq) ((first keyseq) (:satellites system)))
-    ((first keyseq) (:satellites system))))
+(defn get-body [keyseq]
+  (letfn [(rec [ks system]
+            (if (< 1 (count ks))
+              (rec (rest ks) ((first ks) (:satellites system)))
+              ((first ks) (:satellites system))))]
+    (rec keyseq model)))
 
-(defn find-name [name system]
-  (if (contains? (:satellites system) name)
-    (list name)
-    (->> (:satellites system)
-         (map (fn [[k v]] [k (find-name name v)]))
-         (filter (fn [[_ v]] (some? v)))
-         (map (fn [[k v]] (cons k v)))
-         (first))))
+(defn find-name [name]
+  (letfn [(rec [n sys]
+            (if (contains? (:satellites sys) name)
+              (list name)
+              (->> (:satellites sys)
+                   (map (fn [[k v]] [k (rec name v)]))
+                   (filter (fn [[_ v]] (some? v)))
+                   (map (fn [[k v]] (cons k v)))
+                   (first))))]
+    (rec name model)))
 
-(defn find-body [name system] (get-body (find-name name system) system))
+(defn find-body [name] (get-body (find-name name)))
 
 ;; calculates distance between oldest siblings of a system, separating a and b
 ;; for example, the distance between titan and venus
 ;; is the distance between saturn and venus
-(defn distance-between [a b system]
-  (let [al (find-name a system)
-        bl (find-name b system)
-        dl (fn [seq ind] (:distance (find-body (nth seq ind) system)))
-        dk (fn [pair] (abs (- (:distance (find-body (first pair) system))
-                             (:distance (find-body (second pair) system)))))]
+(defn distance-between [a b]
+  (let [al (find-name a)
+        bl (find-name b)
+        dl (fn [seq ind] (:distance (find-body (nth seq ind))))
+        dk (fn [pair] (abs (- (:distance (find-body (first pair)))
+                             (:distance (find-body (second pair))))))]
     (cond (subseq? al bl) (dl bl (count al))
           (subseq? bl al) (dl al (count bl))
           :else (dk (->> (map vector al bl)
@@ -91,18 +98,17 @@
 ;; (time-between :mars :earth) => "2 days, 1 hours, 39 minutes, 34 seconds"
 ;; (time-between :mercury :saturn) => "8 days, 16 hours, 8 minutes, 34 seconds"
 (defn time-between [a b]
-  (->> sun
-       (distance-between a b)
+  (->> (distance-between a b)
        (integral-flip-time 9.8)
        (pretty-time)))
 
-;; gravity at surface
+;; gravity at surface of body
 (defn surface-gravity [body]
   (/ (* big-g (:mass body)) (square (:radius body))))
 
-;; gravity at distance from center
-(defn celestial-gravity [body]
-  (/ (* (:mass body) big-g ) (square (:distance body))))
+;; gravity at distance from center of a mass
+(defn celestial-gravity [mass dist]
+  (/ (* mass big-g ) (square dist)))
 
 ;; perpendicular velocity to maintain circular orbit
 (defn circular-orbit-velocity [mass dist]
@@ -120,8 +126,13 @@
 
 ;; find the length of a year of a planet, assuming a circular orbit
 ;; (planetary-year :earth) => "365 days, 4 hours, 49 minutes, 54 seconds"
-(defn planetary-year [planet]
-  (->> (find-body planet sun)
-       (:distance)
-       (circular-orbit-period 1.9891e30)
-       (pretty-time)))
+;; (planetary-year :moon) => "27 days, 10 hours, 51 minutes, 17 seconds"
+(defn planetary-year [body]
+  (->>
+   (find-name body)
+   (map find-body)
+   (take-last 2)
+   (doall)
+   ((fn [p] [(:mass (first p)) (:distance (second p))]))
+   ((fn [seq] (circular-orbit-period (first seq) (second seq))))
+   (pretty-time)))
